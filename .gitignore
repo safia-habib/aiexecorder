@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Node / frontend
+node_modules/
+dist/
+.cache/
+*.tsbuildinfo
+
+# Source data (add to repo only intentionally)
+data/*.xlsx
+data/*.csv
+data/*.json
+
+# Vector DB volumes
+qdrant_storage/
+.qdrant/
+
+# Ollama model cache
+ollama_data/
+.ollama/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

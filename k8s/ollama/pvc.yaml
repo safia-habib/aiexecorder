@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-models
+  namespace: ai-eo-explorer
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # llama3.1:8b ≈ 5 GB  |  nomic-embed-text ≈ 0.3 GB  |  headroom ≈ 15 GB
+      storage: 20Gi
+  # TODO: Same storageClassName guidance as qdrant/pvc.yaml.
+  # storageClassName: gp3

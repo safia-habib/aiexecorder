@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: ai-eo-explorer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      initContainers:
+        # Block the API pod from starting until Qdrant and Ollama are reachable.
+        - name: wait-for-deps
+          image: curlimages/curl:8.7.1
+          command:
+            - sh
+            - -c
+            - |
+              until curl -sf http://qdrant:6333/readyz; do
+                echo "Waiting for Qdrant..."; sleep 4
+              done
+              until curl -sf http://ollama:11434/api/tags; do
+                echo "Waiting for Ollama..."; sleep 4
+              done
+              echo "Dependencies ready."
+      containers:
+        - name: backend
+          # TODO: replace with your registry path after building and pushing.
+          # Build:  docker build -t <registry>/state-ai-eo-backend:latest ./backend
+          # Push:   docker push <registry>/state-ai-eo-backend:latest
+          image: your-registry/state-ai-eo-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: app-config
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30

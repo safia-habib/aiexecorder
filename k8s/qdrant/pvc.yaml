@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qdrant-storage
+  namespace: ai-eo-explorer
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  # TODO: Set storageClassName to match your cloud provider's block-storage class.
+  #   EKS:  gp3
+  #   GKE:  standard-rwo  (or premium-rwo for SSD)
+  #   AKS:  managed-csi   (or managed-premium for SSD)
+  # Leave unset to use the cluster default storage class.
+  # storageClassName: gp3

@@ -1,0 +1,46 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-eo-ingress
+  namespace: ai-eo-explorer
+  annotations:
+    # TODO: uncomment the annotation block for your Ingress controller.
+
+    # nginx Ingress controller (recommended — handles SSE buffering correctly):
+    # kubernetes.io/ingress.class: nginx
+    # nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    # nginx.ingress.kubernetes.io/proxy-buffering: "off"
+
+    # AWS ALB (EKS with aws-load-balancer-controller):
+    # kubernetes.io/ingress.class: alb
+    # alb.ingress.kubernetes.io/scheme: internet-facing
+    # alb.ingress.kubernetes.io/target-type: ip
+    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+
+    # GKE managed Ingress:
+    # kubernetes.io/ingress.class: gce
+    # Note: GKE managed Ingress does not expose buffering controls;
+    # prefer nginx Ingress Controller on GKE when SSE streaming matters.
+spec:
+  # TODO: set ingressClassName to your controller (nginx / alb / gce / traefik …)
+  # ingressClassName: nginx
+  rules:
+    - host: ai-eo.example.com   # TODO: replace with your actual domain
+      http:
+        paths:
+          # /api routes go directly to the backend so nginx-inside-frontend is bypassed
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+          # Everything else is served by the frontend (SPA with nginx inside)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

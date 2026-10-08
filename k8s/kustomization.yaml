@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ai-eo-explorer
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret-stub.yaml
+  - qdrant/pvc.yaml
+  - qdrant/statefulset.yaml
+  - qdrant/service.yaml
+  - ollama/pvc.yaml
+  - ollama/statefulset.yaml
+  - ollama/service.yaml
+  - backend/deployment.yaml
+  - backend/service.yaml
+  - frontend/deployment.yaml
+  - frontend/service.yaml
+  - jobs/pull-models.yaml
+  - ingress.yaml

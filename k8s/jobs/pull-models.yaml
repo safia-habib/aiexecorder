@@ -1,0 +1,43 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ollama-pull-models
+  namespace: ai-eo-explorer
+  annotations:
+    # Re-run this job after deleting it whenever you need to pull updated model versions.
+    # kubectl delete job ollama-pull-models -n ai-eo-explorer && kubectl apply -f k8s/jobs/pull-models.yaml
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: model-puller
+          image: curlimages/curl:8.7.1
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "Waiting for Ollama to be ready..."
+              until curl -sf http://ollama:11434/api/tags > /dev/null; do
+                echo "  Ollama not ready yet, retrying in 5s..."
+                sleep 5
+              done
+              echo "Pulling nomic-embed-text (~274 MB)..."
+              curl -sf -X POST http://ollama:11434/api/pull \
+                -H "Content-Type: application/json" \
+                -d '{"name":"nomic-embed-text","stream":false}'
+              echo "Pulling llama3.1:8b (~4.7 GB, this will take several minutes)..."
+              curl -sf -X POST http://ollama:11434/api/pull \
+                -H "Content-Type: application/json" \
+                -d '{"name":"llama3.1:8b","stream":false}'
+              echo "All models pulled successfully."
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"

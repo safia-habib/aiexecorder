@@ -1,0 +1,67 @@
+version: '3.9'
+
+# ── Local development stack ─────────────────────────────────────────────────
+# Usage:
+#   1. docker compose up -d
+#   2. Pull Ollama models (first run only):
+#        docker exec -it ai-eo-ollama ollama pull nomic-embed-text
+#        docker exec -it ai-eo-ollama ollama pull llama3.1:8b
+#   3. Run ingestion once (from backend/ with the venv active, or via exec):
+#        docker exec -it ai-eo-backend \
+#          python -m ingestion.ingest --data-path /data/state_ai_eo_source.xlsx --recreate
+#      The ./data directory is bind-mounted into the backend at /data.
+#   4. Open http://localhost:5173  (frontend dev — requires `npm run dev` in frontend/)
+#      OR http://localhost:3000    (nginx-served built frontend via Docker)
+# ────────────────────────────────────────────────────────────────────────────
+
+services:
+  ollama:
+    container_name: ai-eo-ollama
+    image: ollama/ollama:0.3.6
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  qdrant:
+    container_name: ai-eo-qdrant
+    image: qdrant/qdrant:v1.9.3
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  backend:
+    container_name: ai-eo-backend
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      OLLAMA_URL: http://ollama:11434
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: state_eo
+      EMBED_MODEL: nomic-embed-text
+      LLM_MODEL: llama3.1:8b
+      OTLP_ENDPOINT: ""
+    volumes:
+      - ./data:/data:ro   # makes the xlsx available inside the container for ingestion
+    depends_on:
+      - ollama
+      - qdrant
+    restart: unless-stopped
+
+  frontend:
+    container_name: ai-eo-frontend
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  qdrant_data:

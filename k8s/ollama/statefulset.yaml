@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ollama
+  namespace: ai-eo-explorer
+spec:
+  serviceName: ollama
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      # ── GPU node pool (recommended for llama3.1:8b; uncomment if available) ──
+      # nodeSelector:
+      #   cloud.google.com/gke-accelerator: nvidia-l4          # GKE GPU node pool
+      #   node.kubernetes.io/instance-type: g4dn.xlarge         # EKS GPU node
+      #   kubernetes.azure.com/agentpool: gpupool               # AKS GPU node pool
+      # tolerations:
+      #   - key: nvidia.com/gpu
+      #     operator: Exists
+      #     effect: NoSchedule
+      # ─────────────────────────────────────────────────────────────────────────
+      containers:
+        - name: ollama
+          image: ollama/ollama:0.3.6
+          ports:
+            - containerPort: 11434
+              name: http
+          env:
+            - name: OLLAMA_MODELS
+              value: /models
+          volumeMounts:
+            - name: model-cache
+              mountPath: /models
+          resources:
+            # CPU-only inference: llama3.1:8b needs 8–10 GB RAM; generation will be slow (~1–3 tok/s).
+            # With a GPU node the limits block changes to: nvidia.com/gpu: "1" (and RAM can drop to 6Gi).
+            requests:
+              memory: "10Gi"
+              cpu: "2"
+            limits:
+              memory: "14Gi"
+              cpu: "4"
+              # nvidia.com/gpu: "1"   # uncomment for GPU
+          readinessProbe:
+            httpGet:
+              path: /api/tags
+              port: 11434
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 12   # allow up to 2 min for cold start
+          livenessProbe:
+            httpGet:
+              path: /api/tags
+              port: 11434
+            initialDelaySeconds: 60
+            periodSeconds: 30
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: ollama-models

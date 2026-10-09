@@ -15,10 +15,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          # TODO: replace with your registry path after pushing.
-          # Build:  docker build -t <registry>/state-ai-eo-frontend:latest ./frontend
-          # Push:   docker push <registry>/state-ai-eo-frontend:latest
-          image: your-registry/state-ai-eo-frontend:latest
+          image: safiaregistry.azurecr.io/state-ai-eo-frontend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 80

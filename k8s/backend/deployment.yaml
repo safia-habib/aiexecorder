@@ -30,10 +30,7 @@ spec:
               echo "Dependencies ready."
       containers:
         - name: backend
-          # TODO: replace with your registry path after building and pushing.
-          # Build:  docker build -t <registry>/state-ai-eo-backend:latest ./backend
-          # Push:   docker push <registry>/state-ai-eo-backend:latest
-          image: your-registry/state-ai-eo-backend:latest
+          image: safiaregistry.azurecr.io/state-ai-eo-backend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

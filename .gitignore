@@ -15,8 +15,7 @@ dist/
 .cache/
 *.tsbuildinfo
 
-# Source data (add to repo only intentionally)
-data/*.xlsx
+# Source data
 data/*.csv
 data/*.json
 

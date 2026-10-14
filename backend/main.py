@@ -40,16 +40,33 @@ def health():
     }
 
 
+def _parse_otlp_headers(raw: str) -> dict[str, str]:
+    """Parse 'key1=value1,key2=value2' into a dict for the OTLP exporter."""
+    if not raw.strip():
+        return {}
+    return dict(pair.split("=", 1) for pair in raw.split(",") if "=" in pair)
+
+
 def _setup_otel() -> None:
     from opentelemetry import trace
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+    from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.semconv.resource import ResourceAttributes
 
-    provider = TracerProvider()
+    resource = Resource.create({
+        ResourceAttributes.SERVICE_NAME: settings.otlp_service_name,
+    })
+    provider = TracerProvider(resource=resource)
     provider.add_span_processor(
-        BatchSpanProcessor(OTLPSpanExporter(endpoint=settings.otlp_endpoint))
+        BatchSpanProcessor(
+            OTLPSpanExporter(
+                endpoint=settings.otlp_endpoint,
+                headers=_parse_otlp_headers(settings.otlp_headers),
+            )
+        )
     )
     trace.set_tracer_provider(provider)
     FastAPIInstrumentor.instrument_app(app)

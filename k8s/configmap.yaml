@@ -9,5 +9,11 @@ data:
   QDRANT_COLLECTION: "state_eo"
   EMBED_MODEL: "nomic-embed-text"
   LLM_MODEL: "llama3.1:8b"
-  # Leave empty to disable OTel export. Set to your DT OTLP endpoint to enable tracing.
+  # OpenTelemetry / OpenInference — leave empty to disable tracing.
+  # Set all three to enable export to your APM platform.
   OTLP_ENDPOINT: ""
+  # Comma-separated key=value pairs.
+  # Dynatrace:     Authorization=Api-Token dt0c01.XXXXXXXXXXXX
+  # Arize Phoenix: api_key=<key>,space_id=<id>
+  OTLP_HEADERS: ""
+  OTLP_SERVICE_NAME: "state-ai-eo-explorer"

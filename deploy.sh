@@ -172,6 +172,32 @@ apply "${K8S_DIR}/frontend/deployment.yaml"
 apply "${K8S_DIR}/frontend/service.yaml"
 wait_for_deployment_ready "frontend" 120
 
+# Wait for the cloud load balancer to assign a public IP / hostname.
+log "Waiting for frontend LoadBalancer external IP (may take 1–3 min)..."
+EXTERNAL_IP=""
+for i in $(seq 1 36); do   # 36 × 5 s = 3 min ceiling
+  EXTERNAL_IP=$(kubectl get svc frontend \
+      --namespace "$NS" \
+      -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+  # Some clouds (EKS) assign a hostname rather than an IP
+  if [ -z "$EXTERNAL_IP" ]; then
+    EXTERNAL_IP=$(kubectl get svc frontend \
+        --namespace "$NS" \
+        -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+  fi
+  if [ -n "$EXTERNAL_IP" ]; then
+    ok "Frontend is publicly reachable at: http://${EXTERNAL_IP}"
+    break
+  fi
+  log "  Still waiting for external IP... (${i}/36)"
+  sleep 5
+done
+
+if [ -z "$EXTERNAL_IP" ]; then
+  log "WARNING: LoadBalancer external IP not yet assigned after 3 min."
+  log "  Run this to check later:  kubectl get svc frontend -n $NS"
+fi
+
 # ── 8. Ingress ────────────────────────────────────────────────────────────────
 log "=== Step 8/9: Ingress ==="
 apply "${K8S_DIR}/ingress.yaml"
@@ -185,8 +211,12 @@ echo ""
 log "Next steps:"
 log "  1. Run the ingestion job to load EO data into Qdrant:"
 log "       kubectl exec -n $NS deploy/backend -- python ingestion/ingest.py --data-path /data/State_AI_Executive_Orders_Dynatrace_Report.xlsx"
-log "  2. Check ingress address:  kubectl get ingress -n $NS"
-log "  3. Health check:           kubectl port-forward -n $NS svc/backend 8000:8000 &"
-log "                             curl http://localhost:8000/api/health"
+if [ -n "$EXTERNAL_IP" ]; then
+  log "  2. Open the app:           http://${EXTERNAL_IP}"
+  log "  3. Health check:           curl http://${EXTERNAL_IP}/api/health"
+else
+  log "  2. Get the public IP:      kubectl get svc frontend -n $NS"
+  log "  3. Health check:           curl http://<EXTERNAL-IP>/api/health"
+fi
 log ""
 ok "All resources deployed successfully."

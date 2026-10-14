@@ -3,10 +3,22 @@ kind: Service
 metadata:
   name: frontend
   namespace: ai-eo-explorer
+  annotations:
+    # ── AWS EKS (uncomment to use an internet-facing NLB) ──────────────────
+    # service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    # service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+    # service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+
+    # ── GKE (standard external L4 LB — no annotation needed, this is default)
+    # cloud.google.com/load-balancer-type: "External"
+
+    # ── AKS (standard public LB — no annotation needed by default) ──────────
 spec:
+  type: LoadBalancer
   selector:
     app: frontend
   ports:
-    - port: 80
+    - name: http
+      port: 80
       targetPort: 80
-  type: ClusterIP
+      protocol: TCP

@@ -276,38 +276,51 @@ in the Qdrant PVC inside the cluster.
 
 ---
 
-### Step 6 — Ingress vs LoadBalancer
+### Step 6 — Accessing the app via public IP
 
-The `k8s/ingress.yaml` routes two paths:
-- `/api` → `backend:8000` (bypasses the frontend nginx)
-- `/`    → `frontend:80`  (React SPA)
+The frontend service is configured as `type: LoadBalancer`. Your cloud provider
+automatically provisions a public IP or hostname. `deploy.sh` waits for it and
+prints it — but you can also fetch it at any time:
 
-**Decision guide:**
+```bash
+kubectl get svc frontend -n ai-eo-explorer
+# NAME       TYPE           CLUSTER-IP     EXTERNAL-IP      PORT(S)        AGE
+# frontend   LoadBalancer   10.0.12.34     203.0.113.42     80:31234/TCP   2m
+```
 
-| Controller | Streaming (SSE) | Setup effort | When to use |
-|---|---|---|---|
-| **nginx Ingress** (recommended) | Works perfectly — `proxy-buffering: off` is supported | Install nginx Ingress Controller once per cluster | Any cluster; safest for SSE |
-| **AWS ALB** (EKS) | Works but may buffer; set idle timeout ≥ 600 s | Native via aws-load-balancer-controller | Already using ALB in the cluster |
-| **GKE managed Ingress** | SSE may be unreliable (no buffering config) | Zero install | Non-streaming use only |
+Open **`http://<EXTERNAL-IP>`** in your browser — no port-forwarding needed.
 
-To use nginx Ingress, uncomment its annotation block in [k8s/ingress.yaml](k8s/ingress.yaml)
-and set `ingressClassName: nginx`, then apply:
+The backend stays on `ClusterIP` (internal only). The nginx inside the frontend
+container proxies `/api` to `http://backend:8000` within the cluster, so the
+backend is never exposed to the internet.
+
+#### Cloud-specific annotations (optional)
+
+Uncomment the relevant block in [k8s/frontend/service.yaml](k8s/frontend/service.yaml)
+before applying if you need to control load balancer behaviour:
+
+| Cloud | What to uncomment |
+|---|---|
+| **EKS** | `aws-load-balancer-type: external` + `scheme: internet-facing` + `nlb-target-type: ip` |
+| **GKE** | No annotation needed — external L4 LB is the default |
+| **AKS** | No annotation needed — standard public LB is the default |
+
+#### Ingress (optional — for custom domains / TLS)
+
+If you later add a custom domain or need TLS termination, use
+[k8s/ingress.yaml](k8s/ingress.yaml) instead. Uncomment the nginx annotation
+block, set `ingressClassName: nginx`, and revert the frontend service to
+`ClusterIP`:
 
 ```bash
 kubectl apply -f k8s/ingress.yaml
 ```
 
-If you prefer a quick **LoadBalancer** for testing (no Ingress controller needed):
-
-```bash
-kubectl patch svc frontend -n ai-eo-explorer -p '{"spec":{"type":"LoadBalancer"}}'
-kubectl patch svc backend  -n ai-eo-explorer -p '{"spec":{"type":"LoadBalancer"}}'
-kubectl get svc -n ai-eo-explorer   # wait for EXTERNAL-IP to appear
-```
-
-The frontend LoadBalancer will serve the SPA; its nginx config will proxy `/api`
-to the backend service by name — no Ingress required. Revert with `type: ClusterIP`
-when done.
+| Controller | SSE streaming | Notes |
+|---|---|---|
+| **nginx Ingress** | Fully supported (`proxy-buffering: off`) | Recommended for production |
+| **AWS ALB** | Works; set idle timeout ≥ 600 s | Native via aws-load-balancer-controller |
+| **GKE managed Ingress** | May buffer SSE | Non-streaming use only |
 
 ---
 
@@ -399,13 +412,13 @@ curl -N -s -X POST http://localhost:8000/api/ask \
 
 ### Frontend browser tests (end-to-end checklist)
 
-Port-forward the frontend (or use the Ingress / LoadBalancer external IP):
+Get the public IP assigned by the LoadBalancer:
 
 ```bash
-kubectl port-forward -n ai-eo-explorer svc/frontend 3000:80
+kubectl get svc frontend -n ai-eo-explorer
 ```
 
-Open **http://localhost:3000** and work through this checklist:
+Open **`http://<EXTERNAL-IP>`** and work through this checklist:
 
 | # | Action | Expected result |
 |---|---|---|

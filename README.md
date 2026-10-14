@@ -176,7 +176,38 @@ Then update the two `image:` lines:
 
 ---
 
-### Step 3 — Apply all manifests
+### Step 3 — Deploy with the deploy script (recommended)
+
+[`deploy.sh`](deploy.sh) applies resources in dependency order and waits for each
+component to be healthy before moving on:
+
+```bash
+chmod +x deploy.sh
+./deploy.sh
+```
+
+The script walks through nine steps automatically:
+
+| Step | Resources | Wait condition |
+|------|-----------|----------------|
+| 1 | Namespace | Active |
+| 2 | ConfigMap + Secret | — |
+| 3 | Qdrant PVC + StatefulSet + Service | Pod Ready (2 min) |
+| 4 | Ollama PVC + StatefulSet + Service | Pod Ready (5 min) |
+| 5 | `ollama-pull-models` Job | Job Complete — llama3.1:8b is ~4.7 GB, allow 20–30 min |
+| 6 | Backend Deployment + Service | Rollout complete (5 min) |
+| 7 | Frontend Deployment + Service | Rollout complete (2 min) |
+| 8 | Ingress | — |
+| 9 | Summary | Prints `kubectl get all` + next steps |
+
+**Flags:**
+
+```bash
+./deploy.sh --skip-models    # skip model pull when weights are already in the Ollama PVC
+./deploy.sh --namespace foo  # deploy into a different namespace (default: ai-eo-explorer)
+```
+
+**Alternative — apply everything in one shot (no readiness checks):**
 
 ```bash
 kubectl apply -k k8s/
@@ -184,6 +215,7 @@ kubectl apply -k k8s/
 
 This creates in one shot: namespace, PVCs, Qdrant StatefulSet, Ollama StatefulSet,
 backend Deployment, frontend Deployment, the model-pull Job, and the Ingress stub.
+Use this only if you prefer to monitor pod readiness yourself.
 
 ---
 

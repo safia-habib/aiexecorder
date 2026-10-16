@@ -36,7 +36,9 @@ services:
 
   backend:
     container_name: ai-eo-backend
-    build: ./backend
+    build:
+      context: .                   # repo root — Dockerfile COPYs data/ into the image
+      dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
     environment:
@@ -46,8 +48,6 @@ services:
       EMBED_MODEL: nomic-embed-text
       LLM_MODEL: llama3.1:8b
       OTLP_ENDPOINT: ""
-    volumes:
-      - ./data:/data:ro   # makes the xlsx available inside the container for ingestion
     depends_on:
       - ollama
       - qdrant

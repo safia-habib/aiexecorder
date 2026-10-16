@@ -166,8 +166,26 @@ apply "${K8S_DIR}/backend/service.yaml"
 # Backend has an init container that waits for Qdrant + Ollama, so give it extra time
 wait_for_deployment_ready "backend" 300
 
-# ── 7. Frontend ───────────────────────────────────────────────────────────────
-log "=== Step 7/9: Frontend (Deployment + Service) ==="
+# ── 7. Ingestion ─────────────────────────────────────────────────────────────
+log "=== Step 7/10: Data ingestion job ==="
+# Delete stale job if present (Jobs are immutable once created)
+if kubectl get job/run-ingestion --namespace "$NS" > /dev/null 2>&1; then
+  log "Found existing run-ingestion job — deleting before re-apply..."
+  kubectl delete job/run-ingestion --namespace "$NS"
+  sleep 3
+fi
+apply "${K8S_DIR}/jobs/ingest.yaml"
+log "Waiting for ingestion job to complete (embeds and upserts all EO records)..."
+wait_for_job_complete "run-ingestion" 600   # embedding 50 states takes ~5 min on CPU
+log "Ingestion logs:"
+kubectl logs --namespace "$NS" \
+  "$(kubectl get pods --namespace "$NS" \
+       --selector=job-name=run-ingestion \
+       -o jsonpath='{.items[-1:].metadata.name}')" \
+  --tail=20 || true
+
+# ── 8. Frontend ───────────────────────────────────────────────────────────────
+log "=== Step 8/10: Frontend (Deployment + Service) ==="
 apply "${K8S_DIR}/frontend/deployment.yaml"
 apply "${K8S_DIR}/frontend/service.yaml"
 wait_for_deployment_ready "frontend" 120
@@ -198,19 +216,20 @@ if [ -z "$EXTERNAL_IP" ]; then
   log "  Run this to check later:  kubectl get svc frontend -n $NS"
 fi
 
-# ── 8. Ingress ────────────────────────────────────────────────────────────────
-log "=== Step 8/9: Ingress ==="
+# ── 9. Ingress ────────────────────────────────────────────────────────────────
+log "=== Step 9/10: Ingress ==="
 apply "${K8S_DIR}/ingress.yaml"
 ok "Ingress applied. Edit k8s/ingress.yaml to set your actual hostname and Ingress class."
 
-# ── 9. Summary ────────────────────────────────────────────────────────────────
-log "=== Step 9/9: Deployment summary ==="
+# ── 10. Summary ───────────────────────────────────────────────────────────────
+log "=== Step 10/10: Deployment summary ==="
 echo ""
 kubectl get all --namespace "$NS"
 echo ""
 log "Next steps:"
-log "  1. Run the ingestion job to load EO data into Qdrant:"
-log "       kubectl exec -n $NS deploy/backend -- python ingestion/ingest.py --data-path /data/State_AI_Executive_Orders_Dynatrace_Report.xlsx"
+log "  1. To re-run ingestion (e.g. after a data update):"
+log "       kubectl delete job run-ingestion -n $NS"
+log "       kubectl apply -f k8s/jobs/ingest.yaml"
 if [ -n "$EXTERNAL_IP" ]; then
   log "  2. Open the app:           http://${EXTERNAL_IP}"
   log "  3. Health check:           curl http://${EXTERNAL_IP}/api/health"

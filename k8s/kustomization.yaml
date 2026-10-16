@@ -18,4 +18,5 @@ resources:
   - frontend/deployment.yaml
   - frontend/service.yaml
   - jobs/pull-models.yaml
+  - jobs/ingest.yaml
   - ingress.yaml

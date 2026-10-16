@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, HTTPException
 from qdrant_client import QdrantClient
 from qdrant_client.models import FieldCondition, Filter, MatchValue
@@ -5,6 +7,7 @@ from qdrant_client.models import FieldCondition, Filter, MatchValue
 from config import settings
 from states_registry import ALL_STATES
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _client: QdrantClient | None = None
@@ -18,15 +21,24 @@ def get_client() -> QdrantClient:
 
 
 def _all_full_records() -> dict[str, dict]:
-    records, _ = get_client().scroll(
-        collection_name=settings.qdrant_collection,
-        scroll_filter=Filter(
-            must=[FieldCondition(key="chunk_type", match=MatchValue(value="full_record"))]
-        ),
-        limit=200,
-        with_payload=True,
-    )
-    return {r.payload["state_code"]: r.payload for r in records}
+    """Fetch all full_record chunks from Qdrant.
+
+    Returns an empty dict (rather than raising) when Qdrant is unreachable or
+    the collection doesn't exist yet — e.g. before ingestion has been run.
+    """
+    try:
+        records, _ = get_client().scroll(
+            collection_name=settings.qdrant_collection,
+            scroll_filter=Filter(
+                must=[FieldCondition(key="chunk_type", match=MatchValue(value="full_record"))]
+            ),
+            limit=200,
+            with_payload=True,
+        )
+        return {r.payload["state_code"]: r.payload for r in records}
+    except Exception as exc:
+        logger.warning("Could not fetch EO records from Qdrant: %s", exc)
+        return {}
 
 
 @router.get("/states")
@@ -62,17 +74,26 @@ def get_state_eo(state_code: str):
     if code not in ALL_STATES:
         raise HTTPException(status_code=404, detail=f"Unknown state code: {code}")
 
-    records, _ = get_client().scroll(
-        collection_name=settings.qdrant_collection,
-        scroll_filter=Filter(
-            must=[
-                FieldCondition(key="state_code", match=MatchValue(value=code)),
-                FieldCondition(key="chunk_type", match=MatchValue(value="full_record")),
-            ]
-        ),
-        limit=1,
-        with_payload=True,
-    )
+    try:
+        records, _ = get_client().scroll(
+            collection_name=settings.qdrant_collection,
+            scroll_filter=Filter(
+                must=[
+                    FieldCondition(key="state_code", match=MatchValue(value=code)),
+                    FieldCondition(key="chunk_type", match=MatchValue(value="full_record")),
+                ]
+            ),
+            limit=1,
+            with_payload=True,
+        )
+    except Exception as exc:
+        logger.warning("Could not fetch EO record for %s from Qdrant: %s", code, exc)
+        return {
+            "state": ALL_STATES[code],
+            "state_code": code,
+            "has_eo": False,
+            "message": "EO data is not available right now. Qdrant may still be starting or ingestion has not been run.",
+        }
 
     if not records:
         return {

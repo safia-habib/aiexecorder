@@ -1,0 +1,35 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: run-ingestion
+  namespace: ai-eo-explorer
+  annotations:
+    # Re-run whenever you need to reload data:
+    #   kubectl delete job run-ingestion -n ai-eo-explorer
+    #   kubectl apply -f k8s/jobs/ingest.yaml
+spec:
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: ingest
+          image: safiaregistry.azurecr.io/state-ai-eo-backend:latest
+          imagePullPolicy: Always
+          command:
+            - python
+            - ingestion/ingest.py
+            - --data-path
+            - /data/State_AI_Executive_Orders_Dynatrace_Report.xlsx
+            - --recreate
+          envFrom:
+            - configMapRef:
+                name: app-config
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1"

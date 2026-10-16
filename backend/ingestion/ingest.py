@@ -28,7 +28,7 @@ from states_registry import STATE_CODES
 
 EXPECTED_COLUMNS = [
     "State",
-    "Executive Order Name/Number",
+    "Executive Order (Name/Number)",
     "Date Issued",
     "Governor",
     "Main Topics Covered",
@@ -112,7 +112,7 @@ def main() -> None:
                         "state_code": chunk.state_code,
                         "chunk_type": chunk.chunk_type,
                         "text": chunk.text,
-                        "eo_name": str(row_dict.get("Executive Order Name/Number", "")),
+                        "eo_name": str(row_dict.get("Executive Order (Name/Number)", "")),
                         "date_issued": _fmt_date(row_dict.get("Date Issued")),
                         "governor": str(row_dict.get("Governor", "")),
                         "main_topics": str(row_dict.get("Main Topics Covered", "")),

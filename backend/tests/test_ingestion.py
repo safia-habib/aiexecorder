@@ -7,7 +7,7 @@ def _row(**overrides) -> dict:
     base = {
         "State": "California",
         "state_code": "CA",
-        "Executive Order Name/Number": "EO N-12-23",
+        "Executive Order (Name/Number)": "EO N-12-23",
         "Date Issued": "2023-09-06",
         "Governor": "Gavin Newsom",
         "Main Topics Covered": "AI governance and transparency",

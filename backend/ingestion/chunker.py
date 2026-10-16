@@ -14,7 +14,7 @@ class Chunk:
 def chunk_state_record(row: dict) -> list[Chunk]:
     state = str(row["State"])
     state_code = str(row["state_code"])
-    eo_name = str(row.get("Executive Order Name/Number", ""))
+    eo_name = str(row.get("Executive Order (Name/Number)", ""))
 
     full_text = "\n".join([
         f"State: {state}",

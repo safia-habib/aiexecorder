@@ -15,7 +15,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: ingest
-          image: safiaregistry.azurecr.io/state-ai-eo-backend:latest
+          image: safiaregistry.azurecr.io/stateexec/backend:v4
           imagePullPolicy: Always
           command:
             - python

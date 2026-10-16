@@ -163,8 +163,10 @@ Leave unset to use the cluster's default storage class.
 # Set your registry prefix once
 REGISTRY=<your-registry>   # e.g. 123456789.dkr.ecr.us-east-1.amazonaws.com/ai-eo
 
-docker build -t ${REGISTRY}-backend:latest  ./backend
-docker build -t ${REGISTRY}-frontend:latest ./frontend
+# Run both builds from the repo root (not from backend/ or frontend/)
+# The backend Dockerfile uses the repo root as context so it can include data/
+docker build -f backend/Dockerfile -t ${REGISTRY}-backend:latest .
+docker build -f frontend/Dockerfile -t ${REGISTRY}-frontend:latest ./frontend
 
 docker push ${REGISTRY}-backend:latest
 docker push ${REGISTRY}-frontend:latest

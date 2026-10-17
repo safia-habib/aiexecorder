@@ -20,23 +20,27 @@ app.include_router(ask.router, prefix="/api")
 
 @app.get("/api/health")
 def health():
-    ollama_ok = False
     qdrant_ok = False
+    azure_ok = False
     try:
-        httpx.get(f"{settings.ollama_url}/api/tags", timeout=3.0).raise_for_status()
-        ollama_ok = True
-    except Exception:
-        pass
-    try:
-        # Qdrant readiness endpoint
         httpx.get(f"{settings.qdrant_url}/readyz", timeout=3.0).raise_for_status()
         qdrant_ok = True
     except Exception:
         pass
+    try:
+        # Lightweight check: list deployments on the Azure OpenAI resource
+        httpx.get(
+            f"{settings.azure_openai_endpoint}openai/deployments?api-version={settings.azure_openai_api_version}",
+            headers={"api-key": settings.azure_openai_api_key},
+            timeout=5.0,
+        ).raise_for_status()
+        azure_ok = True
+    except Exception:
+        pass
     return {
-        "status": "ok" if (ollama_ok and qdrant_ok) else "degraded",
-        "ollama": "reachable" if ollama_ok else "unreachable",
+        "status": "ok" if (qdrant_ok and azure_ok) else "degraded",
         "qdrant": "reachable" if qdrant_ok else "unreachable",
+        "azure_openai": "reachable" if azure_ok else "unreachable",
     }
 
 

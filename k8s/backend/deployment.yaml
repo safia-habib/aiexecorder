@@ -14,7 +14,7 @@ spec:
         app: backend
     spec:
       initContainers:
-        # Block the API pod from starting until Qdrant and Ollama are reachable.
+        # Block the API pod from starting until Qdrant is reachable.
         - name: wait-for-deps
           image: curlimages/curl:8.7.1
           command:
@@ -23,9 +23,6 @@ spec:
             - |
               until curl -sf http://qdrant:6333/readyz; do
                 echo "Waiting for Qdrant..."; sleep 4
-              done
-              until curl -sf http://ollama:11434/api/tags; do
-                echo "Waiting for Ollama..."; sleep 4
               done
               echo "Dependencies ready."
       containers:
@@ -37,6 +34,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: app-config
+            - secretRef:
+                name: app-secrets
           resources:
             requests:
               memory: "256Mi"

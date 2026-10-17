@@ -2,28 +2,15 @@ version: '3.9'
 
 # ── Local development stack ─────────────────────────────────────────────────
 # Usage:
-#   1. docker compose up -d
-#   2. Pull Ollama models (first run only):
-#        docker exec -it ai-eo-ollama ollama pull nomic-embed-text
-#        docker exec -it ai-eo-ollama ollama pull llama3.1:8b
-#   3. Run ingestion once (from backend/ with the venv active, or via exec):
+#   1. Copy backend/.env.example to backend/.env and fill in Azure OpenAI creds
+#   2. docker compose up -d
+#   3. Run ingestion once:
 #        docker exec -it ai-eo-backend \
-#          python -m ingestion.ingest --data-path /data/state_ai_eo_source.xlsx --recreate
-#      The ./data directory is bind-mounted into the backend at /data.
-#   4. Open http://localhost:5173  (frontend dev — requires `npm run dev` in frontend/)
-#      OR http://localhost:3000    (nginx-served built frontend via Docker)
+#          python -m ingestion.ingest --data-path /data/State_AI_Executive_Orders_Dynatrace_Report.xlsx --recreate
+#   4. Open http://localhost:3000
 # ────────────────────────────────────────────────────────────────────────────
 
 services:
-  ollama:
-    container_name: ai-eo-ollama
-    image: ollama/ollama:0.3.6
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    restart: unless-stopped
-
   qdrant:
     container_name: ai-eo-qdrant
     image: qdrant/qdrant:v1.9.3
@@ -42,20 +29,24 @@ services:
     ports:
       - "8000:8000"
     environment:
-      OLLAMA_URL: http://ollama:11434
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION: state_eo
-      EMBED_MODEL: nomic-embed-text
-      LLM_MODEL: llama3.1:8b
+      # Azure OpenAI — override here or set in backend/.env
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-12-01-preview}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-gpt-4o}
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT:-text-embedding-3-small}
       OTLP_ENDPOINT: ""
     depends_on:
-      - ollama
       - qdrant
     restart: unless-stopped
 
   frontend:
     container_name: ai-eo-frontend
-    build: ./frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
     ports:
       - "3000:80"
     depends_on:
@@ -63,5 +54,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  ollama_data:
   qdrant_data:

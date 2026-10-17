@@ -3,23 +3,21 @@
 #
 # Usage:
 #   ./deploy.sh                  # deploy everything
-#   ./deploy.sh --skip-models    # skip the model-pull job (models already cached)
 #   ./deploy.sh --namespace foo  # override namespace (default: ai-eo-explorer)
 #
 # Requirements: kubectl configured and pointing at the target cluster.
+# Before running: set AZURE_OPENAI_API_KEY in k8s/secret-stub.yaml.
 
 set -euo pipefail
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 NS="ai-eo-explorer"
-SKIP_MODELS=false
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K8S_DIR="${SCRIPT_DIR}/k8s"
 
 # ── Arg parsing ──────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --skip-models)  SKIP_MODELS=true ;;
     --namespace)    NS="$2"; shift ;;
     *) echo "Unknown flag: $1"; exit 1 ;;
   esac
@@ -59,7 +57,7 @@ wait_for_deployment_ready() {
 
 wait_for_job_complete() {
   local name="$1"
-  local timeout="${2:-1800}"   # model pull can take 20–30 min on a slow link
+  local timeout="${2:-300}"
   log "Waiting for job/$name to complete (timeout ${timeout}s)..."
   if ! kubectl wait job/"$name" \
       --namespace "$NS" \
@@ -89,23 +87,22 @@ kubectl cluster-info --request-timeout=10s > /dev/null \
 ok "Cluster reachable."
 
 # ── 1. Namespace ─────────────────────────────────────────────────────────────
-log "=== Step 1/9: Namespace ==="
+log "=== Step 1/8: Namespace ==="
 apply "${K8S_DIR}/namespace.yaml"
 kubectl wait namespace/"$NS" --for=jsonpath='{.status.phase}'=Active --timeout=30s
 ok "Namespace $NS is Active."
 
 # ── 2. Config & Secrets ──────────────────────────────────────────────────────
-log "=== Step 2/9: ConfigMap and Secret ==="
+log "=== Step 2/8: ConfigMap and Secret ==="
 apply "${K8S_DIR}/configmap.yaml"
 apply "${K8S_DIR}/secret-stub.yaml"
 
 # ── 3. Qdrant ────────────────────────────────────────────────────────────────
-log "=== Step 3/9: Qdrant (PVC + StatefulSet + Service) ==="
+log "=== Step 3/8: Qdrant (PVC + StatefulSet + Service) ==="
 apply "${K8S_DIR}/qdrant/pvc.yaml"
 apply "${K8S_DIR}/qdrant/statefulset.yaml"
 apply "${K8S_DIR}/qdrant/service.yaml"
 
-# Qdrant is lightweight — 2 min is generous
 wait_for_pod_ready "app=qdrant" 120
 
 # Quick functional check: Qdrant /readyz
@@ -123,60 +120,22 @@ done
 kill "$PF_PID" 2>/dev/null || true
 $QDRANT_OK && ok "Qdrant /readyz responded." || log "Warning: Qdrant /readyz check skipped (port-forward may not be available in this environment)."
 
-# ── 4. Ollama ────────────────────────────────────────────────────────────────
-log "=== Step 4/9: Ollama (PVC + StatefulSet + Service) ==="
-apply "${K8S_DIR}/ollama/pvc.yaml"
-apply "${K8S_DIR}/ollama/statefulset.yaml"
-apply "${K8S_DIR}/ollama/service.yaml"
-
-# Ollama needs time to start the server process (no model download yet — that's the job)
-wait_for_pod_ready "app=ollama" 300
-
-# ── 5. Pull models ────────────────────────────────────────────────────────────
-if [ "$SKIP_MODELS" = true ]; then
-  log "=== Step 5/9: Skipping model-pull job (--skip-models) ==="
-else
-  log "=== Step 5/9: Model-pull Job (nomic-embed-text + llama3.1:8b) ==="
-  log "NOTE: llama3.1:8b is ~4.7 GB. This step can take 20–30 min on a slow link."
-
-  # Delete stale job if it exists (Jobs are immutable once created)
-  if kubectl get job/ollama-pull-models --namespace "$NS" > /dev/null 2>&1; then
-    log "Found existing ollama-pull-models job — deleting before re-apply..."
-    kubectl delete job/ollama-pull-models --namespace "$NS"
-    # Wait for pods to terminate
-    sleep 5
-  fi
-
-  apply "${K8S_DIR}/jobs/pull-models.yaml"
-  wait_for_job_complete "ollama-pull-models" 2400  # 40-min ceiling
-
-  log "Model pull logs:"
-  kubectl logs --namespace "$NS" \
-    "$(kubectl get pods --namespace "$NS" \
-         --selector=job-name=ollama-pull-models \
-         -o jsonpath='{.items[-1:].metadata.name}')" \
-    --tail=20 || true
-fi
-
-# ── 6. Backend ────────────────────────────────────────────────────────────────
-log "=== Step 6/9: Backend (Deployment + Service) ==="
+# ── 4. Backend ────────────────────────────────────────────────────────────────
+log "=== Step 4/8: Backend (Deployment + Service) ==="
 apply "${K8S_DIR}/backend/deployment.yaml"
 apply "${K8S_DIR}/backend/service.yaml"
+wait_for_deployment_ready "backend" 180
 
-# Backend has an init container that waits for Qdrant + Ollama, so give it extra time
-wait_for_deployment_ready "backend" 300
-
-# ── 7. Ingestion ─────────────────────────────────────────────────────────────
-log "=== Step 7/10: Data ingestion job ==="
-# Delete stale job if present (Jobs are immutable once created)
+# ── 5. Ingestion ─────────────────────────────────────────────────────────────
+log "=== Step 5/8: Data ingestion job ==="
 if kubectl get job/run-ingestion --namespace "$NS" > /dev/null 2>&1; then
   log "Found existing run-ingestion job — deleting before re-apply..."
   kubectl delete job/run-ingestion --namespace "$NS"
   sleep 3
 fi
 apply "${K8S_DIR}/jobs/ingest.yaml"
-log "Waiting for ingestion job to complete (embeds and upserts all EO records)..."
-wait_for_job_complete "run-ingestion" 600   # embedding 50 states takes ~5 min on CPU
+log "Waiting for ingestion job to complete (calls Azure OpenAI to embed all EO records)..."
+wait_for_job_complete "run-ingestion" 300
 log "Ingestion logs:"
 kubectl logs --namespace "$NS" \
   "$(kubectl get pods --namespace "$NS" \
@@ -184,8 +143,8 @@ kubectl logs --namespace "$NS" \
        -o jsonpath='{.items[-1:].metadata.name}')" \
   --tail=20 || true
 
-# ── 8. Frontend ───────────────────────────────────────────────────────────────
-log "=== Step 8/10: Frontend (Deployment + Service) ==="
+# ── 6. Frontend ───────────────────────────────────────────────────────────────
+log "=== Step 6/8: Frontend (Deployment + Service) ==="
 apply "${K8S_DIR}/frontend/deployment.yaml"
 apply "${K8S_DIR}/frontend/service.yaml"
 wait_for_deployment_ready "frontend" 120
@@ -216,13 +175,13 @@ if [ -z "$EXTERNAL_IP" ]; then
   log "  Run this to check later:  kubectl get svc frontend -n $NS"
 fi
 
-# ── 9. Ingress ────────────────────────────────────────────────────────────────
-log "=== Step 9/10: Ingress ==="
+# ── 7. Ingress ────────────────────────────────────────────────────────────────
+log "=== Step 7/8: Ingress ==="
 apply "${K8S_DIR}/ingress.yaml"
 ok "Ingress applied. Edit k8s/ingress.yaml to set your actual hostname and Ingress class."
 
-# ── 10. Summary ───────────────────────────────────────────────────────────────
-log "=== Step 10/10: Deployment summary ==="
+# ── 8. Summary ────────────────────────────────────────────────────────────────
+log "=== Step 8/8: Deployment summary ==="
 echo ""
 kubectl get all --namespace "$NS"
 echo ""

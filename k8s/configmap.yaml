@@ -4,13 +4,16 @@ metadata:
   name: app-config
   namespace: ai-eo-explorer
 data:
-  OLLAMA_URL: "http://ollama:11434"
   QDRANT_URL: "http://qdrant:6333"
   QDRANT_COLLECTION: "state_eo"
-  EMBED_MODEL: "nomic-embed-text"
-  LLM_MODEL: "llama3.1:8b"
+
+  # Azure OpenAI — non-secret config (API key is in app-secrets)
+  AZURE_OPENAI_ENDPOINT: ""      # e.g. https://<resource>.openai.azure.com/
+  AZURE_OPENAI_API_VERSION: "2024-12-01-preview"
+  AZURE_OPENAI_DEPLOYMENT: "gpt-4o"
+  AZURE_OPENAI_EMBEDDING_DEPLOYMENT: "text-embedding-3-small"
+
   # OpenTelemetry / OpenInference — leave empty to disable tracing.
-  # Set all three to enable export to your APM platform.
   OTLP_ENDPOINT: ""
   # Comma-separated key=value pairs.
   # Dynatrace:     Authorization=Api-Token dt0c01.XXXXXXXXXXXX

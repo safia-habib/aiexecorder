@@ -2,11 +2,15 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    ollama_url: str = "http://localhost:11434"
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "state_eo"
-    embed_model: str = "nomic-embed-text"
-    llm_model: str = "llama3.1:8b"
+
+    # Azure OpenAI — used for both embeddings and chat completions
+    azure_openai_endpoint: str = ""
+    azure_openai_api_key: str = ""
+    azure_openai_api_version: str = "2024-12-01-preview"
+    azure_openai_deployment: str = "gpt-4o"
+    azure_openai_embedding_deployment: str = "text-embedding-3-small"
 
     # OpenTelemetry / OpenInference — all three must be set to enable export
     otlp_endpoint: str = ""

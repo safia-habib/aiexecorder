@@ -234,7 +234,6 @@ The script walks through eight steps automatically:
 **Flags:**
 
 ```bash
-./deploy.sh --skip-models    # skip model pull when weights are already in the Ollama PVC
 ./deploy.sh --namespace foo  # deploy into a different namespace (default: ai-eo-explorer)
 ```
 
@@ -244,8 +243,8 @@ The script walks through eight steps automatically:
 kubectl apply -k k8s/
 ```
 
-This creates in one shot: namespace, PVCs, Qdrant StatefulSet, Ollama StatefulSet,
-backend Deployment, frontend Deployment, the model-pull Job, and the Ingress stub.
+This creates in one shot: namespace, PVCs, Qdrant StatefulSet,
+backend Deployment, frontend Deployment, the ingestion Job, and the Ingress stub.
 Use this only if you prefer to monitor pod readiness yourself.
 
 ---
@@ -260,46 +259,28 @@ Expected sequence:
 
 | Pod | Typical ready time | Notes |
 |---|---|---|
-| `qdrant-0` | ~30 s | Fast — no model to load |
-| `ollama-0` | ~1 min | Container starts; models not pulled yet |
-| `ollama-pull-models-*` | **5–15 min** | Downloads ~5 GB; streams logs below |
-| `backend-*` | after above | Init container waits for Qdrant + Ollama |
+| `qdrant-0` | ~30 s | StatefulSet; fast startup |
+| `backend-*` | ~1 min | Init container waits for Qdrant to be ready |
+| `run-ingestion-*` | ~2–5 min | One-shot Job; calls Azure OpenAI to embed all EO records |
 | `frontend-*` | ~30 s | nginx serving the built SPA |
 
-Stream the model-pull job logs in real time:
+Stream the ingestion job logs in real time:
 
 ```bash
-kubectl logs -n ai-eo-explorer -l job-name=ollama-pull-models -f
+kubectl logs -n ai-eo-explorer -l job-name=run-ingestion -f
 ```
 
 ---
 
 ### Step 5 — Run ingestion
 
-Port-forward Qdrant and Ollama to your local machine, then run the ingestion
-script pointing at those local ports. This is the simplest approach and keeps
-the spreadsheet off the cluster entirely.
+The `run-ingestion` Job is applied automatically by `deploy.sh` (Step 5 in the table above).
+To re-run ingestion after updating the spreadsheet (rebuild and push the backend image first):
 
 ```bash
-# Terminal A
-kubectl port-forward -n ai-eo-explorer svc/qdrant 6333:6333
-
-# Terminal B
-kubectl port-forward -n ai-eo-explorer svc/ollama 11434:11434
-```
-
-```bash
-# Terminal C — from the repo root
-cd backend
-.venv\Scripts\activate
-
-# Windows PowerShell
-$env:QDRANT_URL = "http://localhost:6333"
-$env:OLLAMA_URL = "http://localhost:11434"
-
-python -m ingestion.ingest `
-  --data-path "../data/State_AI_Executive_Orders_Dynatrace_Report.xlsx" `
-  --recreate
+kubectl delete job run-ingestion -n ai-eo-explorer --ignore-not-found
+kubectl apply -f k8s/jobs/ingest.yaml
+kubectl logs -n ai-eo-explorer -l job-name=run-ingestion -f
 ```
 
 When you see `Done. Ingested N state(s), M total chunk(s)` the data is persisted
@@ -365,15 +346,14 @@ kubectl apply -f k8s/ingress.yaml
 kubectl get pods -n ai-eo-explorer
 ```
 
-Expected output (all Running; pull-models Job pod Completed):
+Expected output (all Running; ingestion Job pod Completed):
 
 ```
 NAME                        READY   STATUS      RESTARTS
 backend-xxxxxxxxx-xxxxx     1/1     Running     0
 frontend-xxxxxxxxx-xxxxx    1/1     Running     0
-ollama-0                    1/1     Running     0
-ollama-pull-models-xxxxx    0/1     Completed   0
 qdrant-0                    1/1     Running     0
+run-ingestion-xxxxx         0/1     Completed   0
 ```
 
 **2. Backend health endpoint:**
@@ -385,7 +365,7 @@ curl http://localhost:8000/api/health
 
 Expected:
 ```json
-{"status": "ok", "ollama": "reachable", "qdrant": "reachable"}
+{"status": "ok", "azure_openai": "reachable", "qdrant": "reachable"}
 ```
 
 If either shows `"unreachable"`, check the corresponding pod logs before continuing.
@@ -427,8 +407,9 @@ curl -N -s -X POST http://localhost:8000/api/ask \
 ```
 
 Expected: a stream of SSE lines ending with `event: done`. Tokens should appear
-one by one as llama3.1:8b generates them. If the stream is empty or hangs, check
-Ollama logs (`kubectl logs -n ai-eo-explorer ollama-0`).
+one by one as gpt-4o generates them. If the stream is empty or returns an error,
+check `/api/health` — `azure_openai: unreachable` means the key or endpoint in
+the Secret / ConfigMap is incorrect.
 
 **Test 5 — State with no EO returns a grounded refusal (not an error):**
 
@@ -493,13 +474,13 @@ for `WARNING: Could not resolve state codes for: [...]`.
 
 | Symptom | Check |
 |---|---|
-| `backend` pod stuck in `Init:0/1` | Init container waiting for deps. Run `kubectl logs -n ai-eo-explorer <backend-pod> -c wait-for-deps`. Likely Qdrant or Ollama not ready yet. |
-| `ollama-0` Running but models missing | Job `ollama-pull-models` may have failed. Check `kubectl logs -n ai-eo-explorer -l job-name=ollama-pull-models`. Re-run the pull job by deleting and reapplying it. |
-| `/api/health` shows `"ollama": "unreachable"` | Ollama pod isn't ready. Models may still be downloading. Wait for the pull-models job to Complete. |
+| `backend` pod stuck in `Init:0/1` | Init container waiting for Qdrant. Run `kubectl logs -n ai-eo-explorer <backend-pod> -c wait-for-deps`. |
+| `/api/health` shows `"azure_openai": "unreachable"` | API key or endpoint is wrong. Check `k8s/secret-stub.yaml` (key) and `k8s/configmap.yaml` (endpoint). Redeploy after fixing. |
 | `/api/health` shows `"qdrant": "unreachable"` | Qdrant pod crashed or PVC not bound. Check `kubectl describe pod qdrant-0 -n ai-eo-explorer`. |
 | `/api/states` returns all `has_eo: false` | Ingestion has not been run yet, or ran against a different Qdrant collection. Re-run ingestion with `--recreate`. |
+| Ingestion job pod never starts / no logs | Image pull failing — check registry credentials and the `image:` tag in `k8s/jobs/ingest.yaml`. |
+| `/api/ask` streams nothing or errors | Azure OpenAI credentials wrong. Check `/api/health` → `azure_openai: unreachable`. |
 | SSE streaming cuts off early | Ingress or load balancer buffering responses. Use nginx Ingress with `proxy-buffering: off` (see Step 6). |
-| OOM on Ollama pod | Node has less than 14 GB allocatable memory. Resize the node, or provision a GPU node pool and uncomment the GPU blocks in [k8s/ollama/statefulset.yaml](k8s/ollama/statefulset.yaml). |
 | `state_code not found` for a state | The `State` column value in the spreadsheet doesn't exactly match a known state name. Check `normalize_state_code` output during ingestion for the WARNING line. |
 
 ---
@@ -510,15 +491,15 @@ The backend never calls an external knowledge base or the LLM's parametric memor
 for policy facts. Every answer is produced as follows:
 
 1. **Ingestion** reads the spreadsheet one row at a time. Each row is formatted as a
-   structured text block (all nine fields) and embedded with `nomic-embed-text`.
-   Only data from the spreadsheet is stored in Qdrant — no web scraping, no
-   supplemental sources.
+   structured text block (all nine fields) and embedded with Azure OpenAI
+   `text-embedding-3-small`. Only data from the spreadsheet is stored in Qdrant —
+   no web scraping, no supplemental sources.
 
 2. **At query time**, the user's question is embedded with the same model, and Qdrant
    runs a cosine-similarity search **filtered to the selected state's `state_code`**.
    This means the retriever can only surface chunks from that one state's record.
 
-3. **The system prompt** passed to `llama3.1:8b` explicitly instructs the model:
+3. **The system prompt** passed to `gpt-4o` explicitly instructs the model:
    > "Answer based ONLY on the provided context. If the context does not contain
    > enough information to answer, say so clearly. Do not invent policy details
    > not present in the context."
